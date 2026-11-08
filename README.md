@@ -29,6 +29,25 @@ Lengkapi `.env` sebelum menjalankan aplikasi. Launcher memilih `.venv`, lalu `ve
 
 Logo dan favicon LAMIA menggunakan `icon/logo.webp` serta `icon/logo.ico`. Panduan enam langkah berilustrasi tersedia melalui tombol **Panduan** di header dan sidebar.
 
+## Login dan akses operasional
+
+Menu **Jadwal & perangkat**, **Admin console**, serta pembukaan halaman **Player** memerlukan login admin. Sebelum login, workspace menampilkan **Masuk operasional**. Akses langsung ke `/admin`, `/schedule`, atau `/player` diarahkan ke halaman login; semua API `/api/v1/admin/` juga memeriksa sesi di server.
+
+```dotenv
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=isi-kata-sandi-admin-yang-kuat
+```
+
+Jika `ADMIN_USERNAME` belum diisi, nama pengguna adalah `admin`; kata sandi tetap menggunakan `ADMIN_PASSWORD` yang sudah ada. Tidak ada lagi token admin di sessionStorage atau respons login. Token admin lama tidak berlaku untuk akses operasional.
+
+- Login membuat sesi acak yang hash-nya tersimpan pada database. Browser menerima cookie **HttpOnly**, **SameSite=Strict**, dan **Secure** ketika production.
+- Sesi berakhir setelah **30 menit tidak aktif**, dengan batas mutlak **8 jam**. Logout mencabut sesi di database. Perubahan username/password atau application secret mengakhiri sesi lama.
+- Tindakan admin seperti review, konfirmasi pembayaran, pengelolaan perangkat, dan logout memerlukan pemeriksaan CSRF serta origin bila dikirim browser.
+- Lima login gagal dari satu alamat klien memblokir percobaan login selama 15 menit. Pembatasan disimpan di database.
+- Production harus diakses melalui HTTPS agar cookie Secure dapat digunakan. Atur `PUBLIC_BASE_URL` sesuai origin publik aplikasi, termasuk skema HTTPS. Satu akun operator berbasis environment digunakan saat ini; MFA dan pengelolaan akun/RBAC terpisah belum tersedia.
+
+Login admin diperlukan saat membuka player/setup. Setelah terhubung, player tetap memakai kredensial perangkat yang terikat pada layar untuk komunikasi mesin, sehingga penayangan tidak berhenti hanya karena sesi admin berakhir. Token perangkat tidak memberikan akses ke API admin.
+
 ## Aturan jadwal: development dan production
 
 Semua tanggal dan jam pada form pemesanan menggunakan **WIB (Asia/Jakarta, UTC+7)**, terlepas dari zona waktu perangkat.
@@ -73,20 +92,25 @@ Di halaman verifikasi, klik **Kirim kode**, periksa inbox atau spam, masukkan ko
 
 ## Email tagihan dan konfirmasi pembayaran
 
-LAMIA mengirim email otomatis melalui SMTP pada dua peristiwa:
+LAMIA mengirim email otomatis melalui SMTP pada peristiwa berikut:
 
 | Peristiwa | Isi email |
 | --- | --- |
+| Materi masuk antrean review | Nomor pesanan, layar, periode, status menunggu, serta tautan cek status |
+| Materi disetujui | Konfirmasi persetujuan, tautan status, dan petunjuk melanjutkan checkout |
+| Materi ditolak atau perlu revisi | Alasan/catatan revisi, tautan status, dan petunjuk pengajuan ulang |
 | Tagihan berhasil dibuat | Nomor pesanan, layar, periode WIB, subtotal, pajak, total, rekening transfer yang tersedia, dan batas pembayaran |
 | Pembayaran dikonfirmasi operator | Konfirmasi pembayaran, referensi bank, jadwal kampanye, dan invoice PDF terlampir |
 
 Pembayaran simulasi development diberi penanda **SIMULASI**, termasuk pada email dan lampiran. Email OTP, tagihan, dan pembayaran memakai layout tabel, CSS inline, logo PNG dengan Content-ID, serta versi teks biasa. Template tidak bergantung pada flexbox atau pemuatan gambar eksternal.
 
-Email tagihan/pembayaran dicatat ke tabel `email_outbox` dalam transaksi yang sama dengan perubahan pesanan. SMTP dijalankan setelah commit melalui background task. Worker terpisah dari rekonsiliasi jadwal mencoba ulang pengiriman yang gagal, maksimal lima percobaan dengan jeda bertambah. Antrean tersimpan tetap tersedia setelah restart; scheduler container juga memprosesnya. Kegagalan SMTP tidak membatalkan tagihan atau pembayaran.
+Email review, tagihan, dan pembayaran dicatat ke tabel `email_outbox` dalam transaksi yang sama dengan perubahan pesanan. SMTP dijalankan setelah commit melalui background task. Worker terpisah dari rekonsiliasi jadwal mencoba ulang pengiriman yang gagal, maksimal lima percobaan dengan jeda bertambah. Antrean tersimpan tetap tersedia setelah restart; scheduler container juga memprosesnya. Kegagalan SMTP tidak membatalkan tagihan atau pembayaran.
 
-Kunci event unik mencegah email baru untuk pengulangan checkout yang sama, dan lease database mencegah dua worker mengirim item yang sama secara bersamaan. Message-ID dipertahankan saat retry. Seperti pengiriman SMTP pada umumnya, kegagalan proses tepat setelah server menerima pesan masih dapat menyebabkan pengiriman ulang; ini bukan jaminan exactly-once. Tagihan yang sudah dibayar atau kedaluwarsa tidak dikirim ulang dari antrean. Aktivitas `EMAIL_SENT`, `EMAIL_RETRY`, `EMAIL_FAILED`, dan `EMAIL_CANCELLED` dapat dilihat pada audit admin.
+Kunci event unik mencegah email baru untuk pengulangan checkout yang sama, dan lease database mencegah dua worker mengirim item yang sama secara bersamaan. Message-ID dipertahankan saat retry. Seperti pengiriman SMTP pada umumnya, kegagalan proses tepat setelah server menerima pesan masih dapat menyebabkan pengiriman ulang; ini bukan jaminan exactly-once. Tagihan yang sudah dibayar atau kedaluwarsa tidak dikirim ulang dari antrean. Notifikasi menunggu review yang sudah tidak relevan, atau keputusan untuk versi materi yang sudah diganti, dibatalkan sebelum retry. Aktivitas `EMAIL_SENT`, `EMAIL_RETRY`, `EMAIL_FAILED`, dan `EMAIL_CANCELLED` dapat dilihat pada audit admin.
 
-Isi email menggunakan snapshot transaksi, bukan perubahan tarif/rekening setelahnya. Antrean email tidak menyimpan token sesi atau hash NPWP. Isi `PUBLIC_BASE_URL` dengan URL workspace publik agar email transaksi menyertakan tombol ke aplikasi. Jika kosong, email tetap berisi seluruh rincian dan instruksi tanpa membuat tautan localhost.
+Isi email menggunakan snapshot transaksi, bukan perubahan tarif/rekening setelahnya. Antrean email tidak menyimpan token sesi atau hash NPWP. Isi `PUBLIC_BASE_URL` dengan URL workspace publik agar email transaksi menyertakan tombol ke aplikasi. Email review menggunakan tautan `/status` dengan akses khusus baca-status yang berlaku **7 hari**. Tautan menampilkan perkembangan terbaru dan catatan revisi tanpa membuka informasi kontak, data pajak, perubahan materi, pembayaran, atau akses admin. Halaman diperbarui otomatis setiap 20 detik. Gunakan tautan dari email terbaru jika akses telah berakhir.
+
+Untuk email review di production, `PUBLIC_BASE_URL` harus berupa URL HTTPS publik agar tombol status tersedia. Pada development dengan host localhost/127.0.0.1, alamat lokal dapat digunakan otomatis. Jika domain publik belum diatur, email tetap menjelaskan cara memeriksa Pesanan saya, tetapi tidak membuat tautan berbasis Host yang tidak dipercaya.
 
 ## Verifikasi ponsel dan pembayaran lokal
 
@@ -148,7 +172,7 @@ Kedua proses harus menggunakan `DB_PATH` dan konfigurasi yang sama. Gunakan proc
 
 Daftarkan perangkat melalui **Jadwal & perangkat → Kelola token**. Setiap token terikat pada satu layar, disimpan sebagai hash HMAC, dan dapat dicabut. Token asli hanya ditampilkan sekali saat dibuat; daftar perangkat berikutnya menampilkan identitas dan status, bukan token asli. `DEVICE_TOKEN` bersama hanya diterima di development, tidak di production.
 
-Pada komputer layar, buka `/player`, pilih layar, masukkan token, lalu mulai dan masuk fullscreen. Player:
+Pada komputer layar, login admin terlebih dahulu, lalu buka `/player`, pilih layar, masukkan token, dan mulai dalam fullscreen. Player:
 
 - Memeriksa manifest 48 jam setiap 10 detik dan mengikuti waktu server.
 - Menampilkan gambar, video yang diulang tanpa suara, atau template teks pada periode yang disetujui.
@@ -162,6 +186,7 @@ Takedown diterapkan pada sinkronisasi berikutnya atau saat izin berakhir ketika 
 Lihat `.env.example` tanpa menyalin kredensial ke file yang dibagikan.
 
 - `APP_ENV`: pilih `development` atau `production` secara eksplisit.
+- `ADMIN_USERNAME`: nama pengguna operator, default `admin`.
 - `APP_SECRET`, `ADMIN_PASSWORD`: gunakan nilai unik. Production menolak nilai bawaan/placeholder dan memerlukan secret minimal 32 karakter serta password admin minimal 12 karakter.
 - `HOST`, `PORT`: alamat bind dan port; default `127.0.0.1:8000`.
 - `DB_PATH`: lokasi SQLite. Cadangkan database dan `uploads/` secara bersamaan.
@@ -184,7 +209,7 @@ node --check static/player.js
 node --check static/guide.js
 ```
 
-Pengujian mengisolasi database, unggahan, dan pengiriman pesan dari data operator. SMTP dipalsukan hanya dalam automated test sehingga test tidak mengirim email ke alamat fixture; aplikasi yang dijalankan pengguna tetap memakai SMTP sungguhan untuk email. Cakupan meliputi harga, validasi form, perbedaan aturan jadwal, OTP, review, checkout, pembayaran, invoice panjang, scheduler, takedown, token perangkat, dan laporan penayangan.
+Pengujian mengisolasi database, unggahan, dan pengiriman pesan dari data operator. SMTP dipalsukan hanya dalam automated test sehingga test tidak mengirim email ke alamat fixture; aplikasi yang dijalankan pengguna tetap memakai SMTP sungguhan untuk email. Cakupan meliputi harga, validasi form, perbedaan aturan jadwal, OTP, login/sesi admin, CSRF, pembatasan login, email review dan akses status, checkout, pembayaran, invoice panjang, scheduler, takedown, token perangkat, dan laporan penayangan.
 
 ## Pekerjaan sebelum peluncuran publik
 
