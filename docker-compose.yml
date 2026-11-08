@@ -1,0 +1,70 @@
+name: lamia
+
+x-lamia-common: &lamia-common
+  image: lamia:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  environment:
+    # Server settings override local development values in .env.
+    APP_ENV: production
+    DB_PATH: /data/videotron.db
+    DISABLE_EMBEDDED_SCHEDULER: "true"
+  volumes:
+    - database:/data
+    - uploads:/app/uploads
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 35s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  web:
+    <<: *lamia-common
+    # Default: reverse proxy on the server. Set DOCKER_BIND_ADDRESS=0.0.0.0
+    # to expose the published port on all server interfaces.
+    ports:
+      - "${DOCKER_BIND_ADDRESS:-127.0.0.1}:${PORT:-8000}:8000"
+
+  scheduler:
+    <<: *lamia-common
+    command: ["python", "scheduler.py"]
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, sqlite3;
+          from pathlib import Path;
+          from datetime import datetime, timezone;
+          c=sqlite3.connect(Path(os.environ['DB_PATH']).as_uri()+'?mode=ro', uri=True, timeout=3);
+          row=c.execute('SELECT last_tick FROM scheduler_state WHERE id=1').fetchone();
+          c.close();
+          assert row and 0 <= (datetime.now(timezone.utc)-datetime.fromisoformat(row[0])).total_seconds() < 30
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+# New Docker volumes are separate from the host's existing videotron.db/uploads.
+# Recreating containers retains data; removing volumes deletes their contents.
+volumes:
+  database:
+  uploads:

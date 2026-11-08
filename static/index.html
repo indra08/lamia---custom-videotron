@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#103d38"><meta name="description" content="Rencanakan kampanye videotron, pesan lokasi, dan kelola jadwal penayangan dalam satu workspace.">
+  <title>LAMIA — Outdoor Advertising Workspace</title>
+  <link rel="icon" href="/icon/logo.ico" sizes="any">
+  <link rel="icon" type="image/webp" href="/icon/logo.webp">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/guide.css">
+</head>
+<body>
+<a class="skip" href="#view">Lewati ke konten</a>
+<div id="app">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="LAMIA beranda"><img class="brand-logo" src="/icon/logo.webp" alt="" width="43" height="43"><span>LAMIA<small>OUTDOOR, SIMPLIFIED.</small></span></a>
+    <div class="workspace"><span class="workspace-avatar">L</span><div>Advertising workspace<small>Kampanye & jaringan layar</small></div></div>
+    <div class="nav-label">WORKSPACE</div>
+    <nav aria-label="Navigasi utama">
+      <button class="nav active" data-page="home" aria-label="Jelajahi layar" title="Jelajahi layar"><span class="nav-icon">◫</span><span>Jelajahi layar</span></button>
+      <button class="nav" data-page="booking" aria-label="Buat kampanye" title="Buat kampanye"><span class="nav-icon">＋</span><span>Buat kampanye</span></button>
+      <button class="nav" data-page="orders" aria-label="Pesanan saya" title="Pesanan saya"><span class="nav-icon">▤</span><span>Pesanan saya</span></button>
+      <div id="operationsNav" hidden>
+      <div class="nav-label">OPERASIONAL</div>
+      <button class="nav" data-page="schedule" aria-label="Jadwal dan perangkat" title="Jadwal dan perangkat"><span class="nav-icon">▦</span><span>Jadwal & perangkat</span></button>
+      <button class="nav" data-page="admin" aria-label="Admin console" title="Admin console"><span class="nav-icon">⊞</span><span>Admin console</span></button>
+      <a class="nav" href="/player" aria-label="Buka videotron player" title="Videotron player" target="_blank" rel="noopener"><span class="nav-icon">▷</span><span>Videotron player ↗</span></a>
+      </div>
+      <button type="button" class="nav" id="operationsLogin" onclick="nav('admin')" aria-label="Masuk operasional" title="Masuk operasional"><span class="nav-icon">⌑</span><span>Masuk operasional</span></button>
+    </nav>
+    <div class="side-foot"><div class="help-icon">?</div><b>Butuh panduan?</b><p>Dari memilih lokasi hingga iklan Anda tampil.</p><button class="text-button" onclick="showGuide()">Lihat panduan <span>↗</span></button></div>
+    <button class="legal-link" onclick="showLegal('terms')">Syarat layanan</button><button class="legal-link" onclick="showLegal('privacy')">Privasi</button>
+  </aside>
+  <main>
+    <header><div class="breadcrumb">Workspace <span>/</span> <b id="crumb">Jelajahi layar</b></div><div class="header-right"><button class="header-guide" type="button" onclick="showGuide()" aria-label="Buka panduan beriklan"><span class="header-guide-icon" aria-hidden="true">?</span><span class="header-guide-label">Panduan</span></button><span class="environment" id="environment">WIB · UTC+7</span><button type="button" class="header-guide" id="operationsLogout" onclick="logout()" aria-label="Keluar dari operasional" title="Keluar dari operasional" hidden><span>Keluar admin</span></button><span class="avatar" aria-label="Workspace LAMIA"><img src="/icon/logo.webp" alt="" width="32" height="32"></span></div></header>
+    <div id="view" tabindex="-1"><div class="container"><p class="muted">Memuat workspace…</p></div></div>
+    <footer><span>© 2026 LAMIA</span><span>Make your next impression count.</span><button class="legal-link" onclick="showLegal('terms')">Syarat & ketentuan</button></footer>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<dialog id="modal" aria-labelledby="modalTitle"><div id="modalBody"></div><button class="btn ghost modal-close" onclick="document.querySelector('#modal').close()">Tutup</button></dialog>
+<script src="/static/dropdown.js"></script>
+<script src="/static/form-utils.js"></script>
+<script src="/static/date-picker.js"></script>
+<script src="/static/guide.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
