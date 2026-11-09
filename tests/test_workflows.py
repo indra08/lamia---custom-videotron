@@ -57,7 +57,7 @@ def test_booking_persists_consent_and_protects_data(client):
 
 def test_order_validation(client, monkeypatch):
     assert client.post('/api/v1/orders', json={}).status_code == 422
-    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setenv('APP_ENV', 'cloudflare')
     screen = client.get('/api/v1/screens').json()[0]
     response = client.get(f"/api/v1/screens/{screen['id']}/quote", params={'start_at': app.iso(app.now()), 'end_at': app.iso(app.now()+timedelta(days=2))})
     assert response.status_code == 422
@@ -288,8 +288,8 @@ def test_development_current_time_quote_checkout_and_payment(client, monkeypatch
     assert client.get('/api/v1/orders/'+order['id'],headers=headers).json()['status'] == 'COMPLETED'
 
 
-def test_production_booking_policy_cannot_use_development_schedule(client, monkeypatch):
-    monkeypatch.setenv('APP_ENV', 'production')
+def test_cloudflare_booking_policy_cannot_use_immediate_schedule(client, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'cloudflare')
     policy=client.get('/api/v1/config').json()['booking_policy']
     assert policy['immediate_start'] is False
     assert policy['minimum_lead_minutes'] == 1440
@@ -298,3 +298,24 @@ def test_production_booking_policy_cannot_use_development_schedule(client, monke
     for start,end in [(timestamp,timestamp+timedelta(days=2)),(timestamp+timedelta(days=2),timestamp+timedelta(days=2,minutes=30))]:
         screen=client.get('/api/v1/screens').json()[0]
         assert client.get(f"/api/v1/screens/{screen['id']}/quote",params={'start_at':app.iso(start),'end_at':app.iso(end)}).status_code == 422
+
+
+def test_production_allows_current_time_without_enabling_demo_modes(client, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setenv('ENABLE_DEMO_OTP', 'true')
+    monkeypatch.setenv('ENABLE_DEMO_PAYMENTS', 'true')
+    config = client.get('/api/v1/config').json()
+    assert config['booking_policy'] == {
+        'immediate_start': True, 'minimum_lead_minutes': 0,
+        'minimum_duration_minutes': 24, 'start_grace_seconds': 300,
+    }
+    assert config['demo_otp'] is False
+    assert config['demo_payments'] is False
+    start = app.now().replace(second=0, microsecond=0)
+    end = start + timedelta(minutes=30)
+    screen = client.get('/api/v1/screens').json()[0]
+    assert client.get(f"/api/v1/screens/{screen['id']}/quote", params={
+        'start_at': app.iso(start), 'end_at': app.iso(end),
+    }).status_code == 200
+    order, headers = create(client, schedule={'start_at': app.iso(start), 'end_at': app.iso(end)})
+    assert client.get('/api/v1/orders/' + order['id'], headers=headers).status_code == 200

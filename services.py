@@ -14,7 +14,7 @@ def enabled(name):
 
 
 def booking_policy():
-    development = os.getenv('APP_ENV', 'development').strip().lower() == 'development'
+    development = os.getenv('APP_ENV', 'development').strip().lower() in ('development', 'production')
     return {
         'immediate_start': development,
         'minimum_lead_minutes': 0 if development else 1440,

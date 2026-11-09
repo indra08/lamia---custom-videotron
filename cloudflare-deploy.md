@@ -1,5 +1,7 @@
 # Deployment LAMIA melalui Cloudflare
 
+> **Jalur full Cloudflare Free:** gunakan [panduan khusus `cloudflare/`](cloudflare/README.md) untuk Workers + D1 + Workers KV tanpa VPS/R2. Panduan di bawah tetap mendokumentasikan jalur FastAPI + VPS + Tunnel yang terpisah.
+
 Panduan disusun 9 November 2026 berdasarkan kode repository dan dokumentasi resmi yang ditautkan di bawah. Dokumen ini adalah rencana deployment; belum ada server, DNS, tunnel, atau container yang dijalankan.
 
 ## 1. Apakah LAMIA bisa dihosting di Cloudflare?
@@ -130,13 +132,13 @@ Volume Docker baru berisi database baru. Jika perlu membawa pesanan lama, hentik
 
 Di dashboard Cloudflare, buka **Networking → Tunnels**, buat tunnel bernama misalnya `lamia-production`, lalu pilih lingkungan Docker. Ambil token dari petunjuk instalasi dan simpan sebagai rahasia. Nama menu dapat berubah; ikuti dashboard akun bila berbeda. [Pembuatan tunnel](https://developers.cloudflare.com/tunnel/get-started/), [pengelolaan token](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/).
 
-Di server, buat file `.env.cloudflare` terpisah:
+Di server, salin template token terpisah dengan `cp .env.cloudflare.example .env.cloudflare`, lalu edit isinya:
 
 ```dotenv
 TUNNEL_TOKEN=SALIN_TOKEN_TUNNEL_DARI_DASHBOARD
 ```
 
-Lindungi file tersebut dan tambahkan namanya ke `.gitignore` bila disimpan dalam checkout:
+Lindungi file tersebut. Nama `.env.cloudflare` sudah tercantum pada `.gitignore`:
 
 ```sh
 chmod 600 .env.cloudflare
@@ -146,7 +148,7 @@ File ini hanya diberikan kepada `cloudflared`, sehingga konektor tidak menerima 
 
 ## 7. Tambahkan service tunnel pada server
 
-Buat **file tambahan pada server**, bernama `docker-compose.cloudflare.yml`, dengan isi berikut. File tambahan ini belum dibuat atau diterapkan oleh dokumen ini.
+Repository sudah menyediakan `docker-compose.cloudflare.yml` dengan isi berikut. File ini baru digunakan jika disebutkan lewat opsi `-f`; belum ada tunnel yang dijalankan.
 
 ```yaml
 services:
@@ -250,18 +252,10 @@ docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml logs --tai
 - Email tidak masuk: periksa SMTP/outbound server serta audit `EMAIL_RETRY`/`EMAIL_FAILED`. Cloudflare Tunnel bukan pengganti penyedia SMTP.
 - Scheduler sehat tetapi email tertunda: periksa worker pengiriman dan audit; SMTP gagal tidak membatalkan transaksi tersimpan.
 
-## 12. Jika harus sepenuhnya memakai compute Cloudflare
+## 12. Deployment penuh menggunakan Cloudflare Free
 
-Ini adalah roadmap pengembangan, bukan langkah deploy yang sudah siap dijalankan pada repository sekarang:
+Implementasi yang berdiri sendiri tersedia di [`cloudflare/`](cloudflare/README.md). Backend JavaScript Workers melayani API untuk frontend yang sama, D1 menyimpan transaksi, dan Workers KV menyimpan materi/invoice. Tidak ada VPS, R2, atau Containers pada jalur ini.
 
-1. Pilih Python Workers atau Workers + Containers, lalu buat konfigurasi Wrangler dan entrypoint yang sesuai.
-2. Pindahkan database lokal ke penyimpanan tahan restart; adaptasikan transaksi booking, sesi admin, OTP, audit, dan outbox. D1/Durable Objects memerlukan perubahan kode, bukan sekadar mengganti `DB_PATH`.
-3. Pindahkan unggahan ke object storage seperti R2, termasuk autentikasi aset dan aturan pencabutan materi.
-4. Rancang ulang scheduler dan worker email terhadap lifecycle layanan. Jangan mengandalkan loop proses lokal untuk selalu berjalan setelah instance tidur.
-5. Jalankan FFmpeg pada lingkungan yang mendukung binary/subprocess, atau gunakan layanan pemrosesan media yang terintegrasi.
-6. Verifikasi pengiriman SMTP dan seluruh dependensi PDF/gambar terhadap runtime yang dipilih; penyedia email berbasis HTTPS merupakan opsi bila diperlukan.
-7. Uji restart, beberapa instance, konflik booking, retry email, session revocation, media playback, dan biaya sebelum memindahkan transaksi produksi.
+Ikuti panduan folder tersebut untuk resource baru, konfigurasi lokal Cloudflare, secrets, migrasi, pengujian, dan deploy. Jangan memakai `.env` atau database utama sebagai target migrasi. Data/token antardeployment tidak tersinkron otomatis.
 
-Cloudflare menyediakan deployment Containers melalui Worker/Wrangler dan konfigurasi container, bukan dengan mengunggah file Compose ini begitu saja. [Panduan Containers](https://developers.cloudflare.com/containers/get-started/).
-
-Untuk rilis memakai implementasi sekarang, ikuti bagian 3–11. Untuk menghapus VPS, selesaikan adaptasi pada bagian ini terlebih dahulu.
+Periksa batas kuota Workers Free, konsistensi KV, validasi media berbasis metadata, frekuensi scheduler satu menit, dan konfigurasi SMTP/OTP yang dijelaskan di sana. Jalur VPS + Tunnel pada bagian 3–11 tetap tersedia untuk backend Python dan FFmpeg.

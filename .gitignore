@@ -1,10 +1,36 @@
+# Local environment files; keep shareable templates.
 .env
+.env.*
+!.env.example
+!.env.cloudflare.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.secrets.json
+.secrets.*.json
+!.secrets.example.json
+
+# Dependencies, build output, and local tooling state.
 .venv/
 venv/
+node_modules/
+.generated/
+.wrangler/
 __pycache__/
 .pytest_cache/
+.coverage
+htmlcov/
 *.pyc
+.DS_Store
+*.log
+
+# Runtime databases and customer assets.
 *.db
 *.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+backups/
 uploads/*
 !uploads/.gitkeep

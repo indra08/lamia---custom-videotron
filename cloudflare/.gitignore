@@ -1,0 +1,12 @@
+node_modules/
+.generated/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.secrets.json
+.secrets.*.json
+!.secrets.example.json
+config.local.json
+dist/
+test-results/

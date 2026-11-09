@@ -2,6 +2,8 @@
 
 LAMIA adalah aplikasi pemesanan iklan videotron dengan FastAPI, SQLite, antarmuka berbahasa Indonesia, dan player berbasis browser. Pengiklan dapat memilih layar, memesan jadwal, memverifikasi kontak, mengajukan materi, dan memantau penayangan. Operator mengelola review, pembayaran, perangkat, serta jadwal.
 
+**Contoh deployment:** [https://lamia-id.pages.dev](https://lamia-id.pages.dev). Versi Cloudflare memakai Pages, backend JavaScript Workers, D1, dan Workers KV; setup FastAPI development/production tetap terpisah. Lihat [status deployment](cloudflare/DEPLOYMENT.md) untuk validasi dan konfigurasi yang masih perlu dilengkapi.
+
 Ringkasan kebutuhan dan implementasi tersedia di repository ini; dokumen PRD asli tidak disertakan.
 
 ## Menjalankan aplikasi
@@ -40,7 +42,7 @@ ADMIN_PASSWORD=isi-kata-sandi-admin-yang-kuat
 
 Jika `ADMIN_USERNAME` belum diisi, nama pengguna adalah `admin`; kata sandi tetap menggunakan `ADMIN_PASSWORD` yang sudah ada. Tidak ada lagi token admin di sessionStorage atau respons login. Token admin lama tidak berlaku untuk akses operasional.
 
-- Login membuat sesi acak yang hash-nya tersimpan pada database. Browser menerima cookie **HttpOnly**, **SameSite=Strict**, dan **Secure** ketika production.
+- Login membuat sesi acak yang hash-nya tersimpan pada database. Browser menerima cookie **HttpOnly**, **SameSite=Strict**, dan **Secure** ketika production maupun pada deployment Cloudflare.
 - Sesi berakhir setelah **30 menit tidak aktif**, dengan batas mutlak **8 jam**. Logout mencabut sesi di database. Perubahan username/password atau application secret mengakhiri sesi lama.
 - Tindakan admin seperti review, konfirmasi pembayaran, pengelolaan perangkat, dan logout memerlukan pemeriksaan CSRF serta origin bila dikirim browser.
 - Lima login gagal dari satu alamat klien memblokir percobaan login selama 15 menit. Pembatasan disimpan di database.
@@ -48,20 +50,20 @@ Jika `ADMIN_USERNAME` belum diisi, nama pengguna adalah `admin`; kata sandi teta
 
 Login admin diperlukan saat membuka player/setup. Setelah terhubung, player tetap memakai kredensial perangkat yang terikat pada layar untuk komunikasi mesin, sehingga penayangan tidak berhenti hanya karena sesi admin berakhir. Token perangkat tidak memberikan akses ke API admin.
 
-## Aturan jadwal: development dan production
+## Aturan jadwal: development, production, dan Cloudflare
 
 Semua tanggal dan jam pada form pemesanan menggunakan **WIB (Asia/Jakarta, UTC+7)**, terlepas dari zona waktu perangkat.
 
-| Aturan | `APP_ENV=development` | `APP_ENV=production` |
-| --- | --- | --- |
-| Mulai tayang | Dapat menggunakan waktu sekarang | Minimal 24 jam ke depan |
-| Toleransi waktu mulai saat membuat pesanan | Maksimal 5 menit sebelum waktu server, untuk mengakomodasi pengisian form | Tanpa toleransi |
-| Durasi minimum | 24 menit | 24 jam |
-| Tombol kalender | **Sekarang** dan pilihan durasi **24 menit** | Waktu paling awal sesuai batas 24 jam |
-| Checkout setelah waktu mulai terlewati | Diizinkan selama periode belum berakhir | Ditolak |
-| Aktivasi setelah pembayaran | Langsung `LIVE` jika waktu mulai sudah tercapai | `SCHEDULED`, lalu `LIVE` ketika waktu mulai tercapai |
+| Aturan | `APP_ENV=development` | `APP_ENV=production` | Cloudflare |
+| --- | --- | --- | --- |
+| Mulai tayang | Dapat menggunakan waktu sekarang | Dapat menggunakan waktu sekarang | Minimal 24 jam ke depan |
+| Toleransi waktu mulai saat membuat pesanan | Maksimal 5 menit sebelum waktu server, untuk mengakomodasi pengisian form | Maksimal 5 menit sebelum waktu server | Tidak ada toleransi sebelum batas mulai |
+| Durasi minimum | 24 menit | 24 menit | 24 jam |
+| Kalender | **Sekarang** dan pilihan durasi **24 menit** | **Sekarang** dan pilihan durasi **24 menit** | Mengikuti batas minimum 24 jam |
+| Checkout setelah waktu mulai terlewati | Diizinkan selama periode belum berakhir | Diizinkan selama periode belum berakhir | Tidak diizinkan |
+| Aktivasi setelah pembayaran | Langsung `LIVE` jika waktu mulai sudah tercapai | Langsung `LIVE` jika waktu mulai sudah tercapai | `SCHEDULED`, lalu `LIVE` pada rekonsiliasi saat jadwal mulai |
 
-Aturan development berlaku khusus untuk nilai `development`; lingkungan lain menggunakan batas jadwal production. Aturan yang sama digunakan oleh kalender, estimasi biaya, dan pembuatan pesanan. Selesai tayang harus berada setelah waktu sekarang; periode yang sudah berakhir tidak dapat dibayar.
+Aturan jadwal development dan production Python sama. Pengamanan production tetap berlaku: cookie Secure serta simulasi OTP/pembayaran dinonaktifkan. Backend Cloudflare menggunakan batas konservatif 24 jam dan durasi maksimum 366 hari. Dalam setiap deployment, kalender, estimasi biaya, dan pembuatan pesanan memakai kebijakan backend yang sama. Selesai tayang harus berada setelah waktu sekarang; periode yang sudah berakhir tidak dapat dibayar.
 
 Contoh uji penayangan langsung: pilih **Sekarang**, atur durasi 30 menit atau lebih, selesaikan verifikasi serta review, lalu konfirmasikan pembayaran sebelum periode berakhir. Pemilihan waktu sekarang tidak melewati kewajiban verifikasi, persetujuan materi, atau pembayaran.
 
@@ -140,13 +142,15 @@ Lanjutkan melalui **Pesanan saya** dalam sesi browser yang sama. Token sesi buka
 
 ## Materi iklan dan perhitungan biaya
 
+Validasi decoding berikut berlaku pada backend Python. Versi Cloudflare memeriksa metadata media dan tetap memerlukan review operator; tidak menjalankan FFmpeg, decoding penuh, atau sanitasi ulang gambar.
+
 - JPG/PNG atau MP4 H.264, maksimal **20 MB**.
 - Rasio mengikuti layar, dengan minimum 320×180 dan maksimum 16 megapiksel.
 - Gambar didekode, diperiksa, dan disimpan ulang tanpa metadata asli.
 - Video harus memiliki durasi positif. Server Linux memakai **FFmpeg/ffprobe**, yang sudah disertakan pada Dockerfile. Jika `ffprobe` lokal macOS hilang atau gagal berjalan, aplikasi dapat menggunakan AVFoundation melalui Swift sebagai cadangan. Codec, resolusi, orientasi, dan durasi tetap diperiksa. File tidak dikonversi. Kegagalan validator server dilaporkan sebagai HTTP 503, bukan dianggap sebagai file yang melanggar format. File rusak atau format tidak sesuai ditolak dengan HTTP 422.
 - Semua materi memerlukan persetujuan manusia sebelum checkout; template teks bukan layanan generasi gambar AI.
 
-Biaya dihitung prorata berdasarkan hari kalender WIB dan jumlah hari dalam bulan. Perhitungan menggunakan Decimal dengan pembulatan `ROUND_HALF_UP` per hari. Pajak mengikuti nilai pada data layar/pesanan; nilai awal 11% adalah konfigurasi operator, bukan penetapan tarif pajak yang berlaku bagi bisnis Anda.
+Biaya dihitung prorata berdasarkan hari kalender WIB dan jumlah hari dalam bulan. Backend Python menggunakan Decimal dengan pembulatan `ROUND_HALF_UP` per hari; backend Cloudflare menggunakan aritmetika BigInt untuk mempertahankan pembulatan tersebut pada nilai rupiah. Pajak mengikuti nilai pada data layar/pesanan; nilai awal 11% adalah konfigurasi operator, bukan penetapan tarif pajak yang berlaku bagi bisnis Anda.
 
 ## Invoice profesional
 
@@ -158,7 +162,7 @@ Lengkapi `OPERATOR_NAME`, `OPERATOR_ADDRESS` (opsional), dan `SUPPORT_EMAIL` unt
 
 ## Scheduler, perangkat, dan player
 
-Scheduler berjalan setiap **5 detik**, merekonsiliasi status yang tersimpan, dan melanjutkan keadaan setelah restart. Halaman **Jadwal & perangkat** menampilkan kalender tujuh hari, status koneksi, laporan penayangan, dan jadwal pemeliharaan. Blokir pemeliharaan tidak dapat menimpa reservasi aktif.
+Pada backend Python, scheduler berjalan setiap **5 detik**, merekonsiliasi status yang tersimpan, dan melanjutkan keadaan setelah restart. Cloudflare menggunakan Cron setiap **menit**, ditambah rekonsiliasi saat permintaan terkait masuk jika tick sudah lewat satu menit. Halaman **Jadwal & perangkat** menampilkan kalender tujuh hari, status koneksi, laporan penayangan, dan jadwal pemeliharaan. Blokir pemeliharaan tidak dapat menimpa reservasi aktif.
 
 Untuk menjalankan scheduler sebagai proses terpisah:
 
@@ -210,6 +214,42 @@ node --check static/guide.js
 ```
 
 Pengujian mengisolasi database, unggahan, dan pengiriman pesan dari data operator. SMTP dipalsukan hanya dalam automated test sehingga test tidak mengirim email ke alamat fixture; aplikasi yang dijalankan pengguna tetap memakai SMTP sungguhan untuk email. Cakupan meliputi harga, validasi form, perbedaan aturan jadwal, OTP, login/sesi admin, CSRF, pembatasan login, email review dan akses status, checkout, pembayaran, invoice panjang, scheduler, takedown, token perangkat, dan laporan penayangan.
+
+## Deployment melalui Cloudflare
+
+Deployment contoh saat ini menggunakan **Cloudflare Pages + Workers + D1 + Workers KV** pada paket Workers Free, tanpa VPS atau R2:
+
+| Halaman | Contoh alamat deployment |
+| --- | --- |
+| Workspace | [lamia-id.pages.dev](https://lamia-id.pages.dev) |
+| Masuk operasional | [lamia-id.pages.dev/login](https://lamia-id.pages.dev/login) |
+| Admin | [lamia-id.pages.dev/admin](https://lamia-id.pages.dev/admin) |
+| Jadwal & perangkat | [lamia-id.pages.dev/schedule](https://lamia-id.pages.dev/schedule) |
+| Player | [lamia-id.pages.dev/player](https://lamia-id.pages.dev/player) |
+| Pemeriksaan layanan | [lamia-id.pages.dev/api/v1/health](https://lamia-id.pages.dev/api/v1/health) |
+
+Pages melayani aset statis dan meneruskan API/halaman privat ke Worker `lamia-cloudflare-free` melalui service binding `APP`. D1 menyimpan pesanan, sesi, audit, serta antrean email; KV menyimpan materi dan invoice. URL browser lama di `workers.dev` diarahkan ke domain Pages. Dokumentasi interaktif `/docs` tersedia pada backend FastAPI lokal, belum pada versi Cloudflare.
+
+**Login operasional mengikuti `ADMIN_USERNAME` dan `ADMIN_PASSWORD` pada `.env` utama**, setelah diimpor dan di-deploy ke Worker. File `.env` tidak diunggah sebagai aset publik. Konfigurasi serta salinan secrets khusus Cloudflare berada pada `cloudflare/config.local.json`, `cloudflare/.secrets.json`, dan `cloudflare/.dev.vars`; semuanya diabaikan Git. `APP_SECRET` Cloudflare tetap terpisah jika nilai sumber belum memenuhi minimum 32 karakter. Import password 10–11 karakter memilih `ADMIN_PASSWORD_MIN_LENGTH=10` khusus Cloudflare; batas default tetap 12 dan aturan production Python tidak berubah.
+
+Untuk memperbarui deployment yang sudah dikonfigurasi, gunakan Node.js 22+ dan jalankan dari repository root:
+
+```sh
+cd cloudflare
+npm ci
+npm run import:env
+npm run deploy
+npm run deploy:pages
+npm run smoke:env
+```
+
+Import menyalin konfigurasi yang relevan, termasuk SMTP dan kredensial operasional, tanpa mengubah `.env` asli. Origin publik tetap `https://lamia-id.pages.dev`; path SQLite, port lokal, mode development, dan switch simulasi tidak disalin. Migrasi atau pembuatan resource diperlukan saat setup awal/perubahan schema, bukan setiap redeploy. Data dan token deployment Python/Cloudflare tidak tersinkron otomatis.
+
+Status terakhir: 17 tes Cloudflare lulus; pemeriksaan HTTPS, aset, API, quote, dan login/logout memakai kredensial yang dibaca langsung dari `.env` juga lulus. SMTP sudah diterapkan, tetapi pengiriman email nyata belum diuji dalam deployment. Adapter OTP ponsel dan rekening pembayaran sungguhan masih perlu diisi; rekening contoh tidak diterapkan sehingga checkout tetap dinonaktifkan. Kedua kontak tetap harus terverifikasi untuk melanjutkan pemesanan.
+
+Upload Cloudflare dibatasi 20 MiB/file dan total media/invoice 800 MiB. KV dapat memerlukan 60 detik atau lebih agar file baru terbaca antarlokasi. Kuota Workers/D1/KV Free berlaku bersama resource lain di akun; layanan dapat gagal saat kuota habis. Jangan meng-upgrade paket jika ingin mempertahankan perilaku batas Free. Rincian resource, kuota, backup, dan keterbatasan tersedia di [panduan Cloudflare](cloudflare/README.md) serta [status deployment](cloudflare/DEPLOYMENT.md).
+
+Jalur **FastAPI + VPS + Docker Compose + Cloudflare Tunnel** tetap tersedia di [panduan Tunnel](cloudflare-deploy.md), menggunakan `docker-compose.cloudflare.yml` dan `.env.cloudflare.example`. Setup development/production Python tetap menggunakan `.env`, database, serta unggahan yang sudah ada.
 
 ## Pekerjaan sebelum peluncuran publik
 
